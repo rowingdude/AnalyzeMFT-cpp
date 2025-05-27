@@ -1,0 +1,52 @@
+# Find all required dependencies
+
+# OpenSSL (required)
+find_package(OpenSSL REQUIRED)
+if(NOT OpenSSL_FOUND)
+    message(FATAL_ERROR "OpenSSL not found. Please install OpenSSL development packages.")
+endif()
+
+# SQLite3 (required)
+find_package(SQLite3 REQUIRED)
+if(NOT SQLITE3_FOUND)
+    message(FATAL_ERROR "SQLite3 not found. Please install SQLite3 development packages.")
+endif()
+
+# Threads (required)
+find_package(Threads REQUIRED)
+
+# OpenMP (optional)
+if(ENABLE_OPENMP)
+    find_package(OpenMP)
+    if(OpenMP_CXX_FOUND)
+        message(STATUS "OpenMP found - parallel processing enabled")
+    else()
+        message(WARNING "OpenMP not found - parallel processing disabled")
+        set(ENABLE_OPENMP OFF)
+    endif()
+endif()
+
+# Check for SIMD support
+if(ENABLE_SIMD)
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag("-mavx2" COMPILER_SUPPORTS_AVX2)
+    check_cxx_compiler_flag("-msse4.2" COMPILER_SUPPORTS_SSE42)
+    
+    if(COMPILER_SUPPORTS_AVX2 AND COMPILER_SUPPORTS_SSE42)
+        message(STATUS "SIMD optimizations enabled (AVX2, SSE4.2)")
+    else()
+        message(WARNING "SIMD optimizations not supported by compiler")
+        set(ENABLE_SIMD OFF)
+    endif()
+endif()
+
+# Python development (for bindings)
+if(BUILD_PYTHON_BINDINGS)
+    find_package(Python3 COMPONENTS Interpreter Development)
+    if(Python3_FOUND)
+        message(STATUS "Python ${Python3_VERSION} found - bindings will be built")
+    else()
+        message(WARNING "Python development files not found - bindings disabled")
+        set(BUILD_PYTHON_BINDINGS OFF)
+    endif()
+endif()
