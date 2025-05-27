@@ -14,7 +14,6 @@
 #define CRC32_HARDWARE 1
 #endif
 
-// [Same content as before, just moved to include/analyzeMFT/core/]
 constexpr uint16_t FILE_RECORD_IN_USE = 0x0001;
 constexpr uint16_t FILE_RECORD_IS_DIRECTORY = 0x0002;
 constexpr uint16_t FILE_RECORD_IS_EXTENSION = 0x0004;

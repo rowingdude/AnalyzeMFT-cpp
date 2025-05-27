@@ -17,13 +17,11 @@
 #include <iomanip>
 #include <sstream>
 
-// Update constructor
 MftRecord::MftRecord(const std::vector<uint8_t>& rawRecord, bool computeHashes, int debugLevel)
     : rawRecord(rawRecord), debugLevel(debugLevel), computeHashesFlag(computeHashes),
       magic(0), updOff(0), updCnt(0), lsn(0), seq(0), link(0), attrOff(0), flags(0),
       size(0), allocSizef(0), baseRef(0), nextAttrid(0), recordnum(0), filesize(0), parentRef(0) {
     
-    // Initialize validator
     validator = std::make_unique<MftAttributeValidator>(debugLevel, 0); // recordnum set later
     
     if (computeHashesFlag) {
@@ -32,7 +30,6 @@ MftRecord::MftRecord(const std::vector<uint8_t>& rawRecord, bool computeHashes, 
     parseRecord();
 }
 
-// Validation wrapper implementations
 bool MftRecord::parseSiAttributeWithValidation(size_t offset) {
     validator->setRecordNumber(recordnum);
     auto result = validator->validateStandardInformation(rawRecord, offset, 
@@ -299,13 +296,36 @@ T MftRecord::readLittleEndian(size_t offset) const {
 
 void MftRecord::parseRecord() {
     if (rawRecord.size() < MFT_RECORD_SIZE) {
+        if (debugLevel > 0) {
+            log("Invalid MFT record size: " + std::to_string(rawRecord.size()) + 
+                " bytes, expected " + std::to_string(MFT_RECORD_SIZE), 1);
+        }
         return;
     }
     
     try {
         magic = readLittleEndian<uint32_t>(MFT_RECORD_MAGIC_NUMBER_OFFSET);
+        if (magic != MFT_RECORD_MAGIC) {
+            if (debugLevel > 1) {
+                log("Invalid MFT record magic: 0x" + std::to_string(magic) + 
+                    ", expected 0x" + std::to_string(MFT_RECORD_MAGIC) + 
+                    " for record " + std::to_string(recordnum), 2);
+            }
+        }
+        
         updOff = readLittleEndian<uint16_t>(MFT_RECORD_UPDATE_SEQUENCE_OFFSET);
         updCnt = readLittleEndian<uint16_t>(MFT_RECORD_UPDATE_SEQUENCE_SIZE_OFFSET);
+        
+        if (updOff < 42 || updOff >= MFT_RECORD_SIZE || 
+            updCnt == 0 || updOff + (updCnt * 2) > MFT_RECORD_SIZE) {
+            if (debugLevel > 1) {
+                log("Invalid update sequence array: offset=" + std::to_string(updOff) + 
+                    ", count=" + std::to_string(updCnt) + 
+                    " for record " + std::to_string(recordnum), 2);
+            }
+            return;
+        }
+        
         lsn = readLittleEndian<uint64_t>(MFT_RECORD_LOGFILE_SEQUENCE_NUMBER_OFFSET);
         seq = readLittleEndian<uint16_t>(MFT_RECORD_SEQUENCE_NUMBER_OFFSET);
         link = readLittleEndian<uint16_t>(MFT_RECORD_HARD_LINK_COUNT_OFFSET);
@@ -317,10 +337,34 @@ void MftRecord::parseRecord() {
         nextAttrid = readLittleEndian<uint16_t>(MFT_RECORD_NEXT_ATTRIBUTE_ID_OFFSET);
         recordnum = readLittleEndian<uint32_t>(MFT_RECORD_RECORD_NUMBER_OFFSET);
         
+        if (size > MFT_RECORD_SIZE || allocSizef != MFT_RECORD_SIZE) {
+            if (debugLevel > 1) {
+                log("Invalid record size: used=" + std::to_string(size) + 
+                    ", allocated=" + std::to_string(allocSizef) + 
+                    " for record " + std::to_string(recordnum), 2);
+            }
+        }
+        
+        if (attrOff < 56 || attrOff >= size) {
+            if (debugLevel > 1) {
+                log("Invalid attribute offset: " + std::to_string(attrOff) + 
+                    " for record " + std::to_string(recordnum), 2);
+            }
+            attrOff = 56;
+        }
+        
+        if (!applyFixupArray()) {
+            if (debugLevel > 0) {
+                log("Fixup array validation failed for record " + std::to_string(recordnum), 1);
+            }
+        }
+        
         parseAttributes();
+        
     } catch (const std::exception& e) {
         if (debugLevel > 0) {
-            // Error handling - could use logger here
+            log("Exception parsing MFT record header for record " + 
+                std::to_string(recordnum) + ": " + e.what(), 1);
         }
     }
 }
@@ -785,7 +829,7 @@ bool MftRecord::applyFixupArray() {
         }
         
         for (uint16_t i = 1; i < updCnt; ++i) {
-            size_t sectorOffset = (i * 512) - 2; // Last 2 bytes of each sector
+            size_t sectorOffset = (i * 512) - 2;
             
             if (sectorOffset + 2 > rawRecord.size()) {
                 if (debugLevel > 1) {
@@ -817,6 +861,38 @@ bool MftRecord::applyFixupArray() {
             log("Exception in fixup array processing for record " + 
                 std::to_string(recordnum) + ": " + e.what(), 1);
         }
+        return false;
+    }
+}
+
+bool MftRecord::validateFixupArray() const {
+    if (updCnt == 0 || updOff == 0) {
+        return true;
+    }
+    
+    if (updOff < 42 || updOff >= MFT_RECORD_SIZE || 
+        updCnt == 0 || updOff + (updCnt * 2) > MFT_RECORD_SIZE) {
+        return false;
+    }
+    
+    try {
+        uint16_t updateSeqNum = readLittleEndian<uint16_t>(updOff);
+        
+        for (uint16_t i = 1; i < updCnt; ++i) {
+            size_t sectorOffset = (i * 512) - 2;
+            
+            if (sectorOffset + 2 > rawRecord.size()) {
+                return false;
+            }
+            
+            uint16_t sectorSeqNum = readLittleEndian<uint16_t>(sectorOffset);
+            if (sectorSeqNum != updateSeqNum) {
+                return false;
+            }
+        }
+        
+        return true;
+    } catch (const std::exception& e) {
         return false;
     }
 }
