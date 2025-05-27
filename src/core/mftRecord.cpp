@@ -17,10 +17,14 @@
 #include <iomanip>
 #include <sstream>
 
+// Update constructor
 MftRecord::MftRecord(const std::vector<uint8_t>& rawRecord, bool computeHashes, int debugLevel)
     : rawRecord(rawRecord), debugLevel(debugLevel), computeHashesFlag(computeHashes),
       magic(0), updOff(0), updCnt(0), lsn(0), seq(0), link(0), attrOff(0), flags(0),
       size(0), allocSizef(0), baseRef(0), nextAttrid(0), recordnum(0), filesize(0), parentRef(0) {
+    
+    // Initialize validator
+    validator = std::make_unique<MftAttributeValidator>(debugLevel, 0); // recordnum set later
     
     if (computeHashesFlag) {
         computeHashes();
@@ -28,14 +32,266 @@ MftRecord::MftRecord(const std::vector<uint8_t>& rawRecord, bool computeHashes, 
     parseRecord();
 }
 
+// Validation wrapper implementations
+bool MftRecord::parseSiAttributeWithValidation(size_t offset) {
+    validator->setRecordNumber(recordnum);
+    auto result = validator->validateStandardInformation(rawRecord, offset, 
+        siTimes.crtime, siTimes.mtime, siTimes.atime, siTimes.ctime);
+    
+    if (!result.isValid && debugLevel > 0) {
+        log("Standard Information validation failed: " + result.errorMessage, 1);
+    }
+    
+    return result.isValid;
+}
+
+bool MftRecord::parseFnAttributeWithValidation(size_t offset) {
+    validator->setRecordNumber(recordnum);
+    auto result = validator->validateFileName(rawRecord, offset, 
+        filename, fnTimes.crtime, fnTimes.mtime, fnTimes.atime, fnTimes.ctime, filesize, parentRef);
+    
+    if (!result.isValid && debugLevel > 0) {
+        log("File Name validation failed: " + result.errorMessage, 1);
+    }
+    
+    return result.isValid;
+}
+
+bool MftRecord::parseObjectIdAttributeWithValidation(size_t offset) {
+    validator->setRecordNumber(recordnum);
+    auto result = validator->validateObjectId(rawRecord, offset, 
+        objectId, birthVolumeId, birthObjectId, birthDomainId);
+    
+    if (!result.isValid && debugLevel > 0) {
+        log("Object ID validation failed: " + result.errorMessage, 1);
+    }
+    
+    return result.isValid;
+}
+
+bool MftRecord::parseAttributeListWithValidation(size_t offset) {
+    validator->setRecordNumber(recordnum);
+    auto result = validator->validateAttributeList(rawRecord, offset, attributeList);
+    
+    if (!result.isValid && debugLevel > 0) {
+        log("Attribute List validation failed: " + result.errorMessage, 1);
+    }
+    
+    return result.isValid;
+}
+
+bool MftRecord::parseSecurityDescriptorWithValidation(size_t offset) {
+    validator->setRecordNumber(recordnum);
+    auto result = validator->validateSecurityDescriptor(rawRecord, offset, securityDescriptor);
+    
+    if (!result.isValid && debugLevel > 0) {
+        log("Security Descriptor validation failed: " + result.errorMessage, 1);
+    }
+    
+    return result.isValid;
+}
+
+bool MftRecord::parseVolumeNameWithValidation(size_t offset) {
+    validator->setRecordNumber(recordnum);
+    auto result = validator->validateVolumeName(rawRecord, offset, volumeName);
+    
+    if (!result.isValid && debugLevel > 0) {
+        log("Volume Name validation failed: " + result.errorMessage, 1);
+    }
+    
+    return result.isValid;
+}
+
+bool MftRecord::parseVolumeInformationWithValidation(size_t offset) {
+    validator->setRecordNumber(recordnum);
+    auto result = validator->validateVolumeInformation(rawRecord, offset, volumeInfo);
+    
+    if (!result.isValid && debugLevel > 0) {
+        log("Volume Information validation failed: " + result.errorMessage, 1);
+    }
+    
+    return result.isValid;
+}
+
+bool MftRecord::parseDataWithValidation(size_t offset) {
+    validator->setRecordNumber(recordnum);
+    auto result = validator->validateData(rawRecord, offset, dataAttribute);
+    
+    if (!result.isValid && debugLevel > 0) {
+        log("Data validation failed: " + result.errorMessage, 1);
+    }
+    
+    return result.isValid;
+}
+
+bool MftRecord::parseIndexRootWithValidation(size_t offset) {
+    validator->setRecordNumber(recordnum);
+    auto result = validator->validateIndexRoot(rawRecord, offset, indexRoot);
+    
+    if (!result.isValid && debugLevel > 0) {
+        log("Index Root validation failed: " + result.errorMessage, 1);
+    }
+    
+    return result.isValid;
+}
+
+bool MftRecord::parseIndexAllocationWithValidation(size_t offset) {
+    validator->setRecordNumber(recordnum);
+    auto result = validator->validateIndexAllocation(rawRecord, offset, indexAllocation);
+    
+    if (!result.isValid && debugLevel > 0) {
+        log("Index Allocation validation failed: " + result.errorMessage, 1);
+    }
+    
+    return result.isValid;
+}
+
+bool MftRecord::parseBitmapWithValidation(size_t offset) {
+    validator->setRecordNumber(recordnum);
+    auto result = validator->validateBitmap(rawRecord, offset, bitmap);
+    
+    if (!result.isValid && debugLevel > 0) {
+        log("Bitmap validation failed: " + result.errorMessage, 1);
+    }
+    
+    return result.isValid;
+}
+
+bool MftRecord::parseReparsePointWithValidation(size_t offset) {
+    validator->setRecordNumber(recordnum);
+    auto result = validator->validateReparsePoint(rawRecord, offset, reparsePoint);
+    
+    if (!result.isValid && debugLevel > 0) {
+        log("Reparse Point validation failed: " + result.errorMessage, 1);
+    }
+    
+    return result.isValid;
+}
+
+bool MftRecord::parseEaInformationWithValidation(size_t offset) {
+    validator->setRecordNumber(recordnum);
+    auto result = validator->validateEaInformation(rawRecord, offset, eaInformation);
+    
+    if (!result.isValid && debugLevel > 0) {
+        log("EA Information validation failed: " + result.errorMessage, 1);
+    }
+    
+    return result.isValid;
+}
+
+bool MftRecord::parseEaWithValidation(size_t offset) {
+    validator->setRecordNumber(recordnum);
+    auto result = validator->validateEa(rawRecord, offset, ea);
+    
+    if (!result.isValid && debugLevel > 0) {
+        log("EA validation failed: " + result.errorMessage, 1);
+    }
+    
+    return result.isValid;
+}
+
+bool MftRecord::parseLoggedUtilityStreamWithValidation(size_t offset) {
+    validator->setRecordNumber(recordnum);
+    auto result = validator->validateLoggedUtilityStream(rawRecord, offset, loggedUtilityStream);
+    
+    if (!result.isValid && debugLevel > 0) {
+        log("Logged Utility Stream validation failed: " + result.errorMessage, 1);
+    }
+    
+    return result.isValid;
+}
+
+
+
+void MftRecord::parseRecord() {
+    if (rawRecord.size() < MFT_RECORD_SIZE) {
+        if (debugLevel > 0) {
+            log("Invalid MFT record size: " + std::to_string(rawRecord.size()) + 
+                " bytes, expected " + std::to_string(MFT_RECORD_SIZE), 1);
+        }
+        return;
+    }
+    
+    try {
+        magic = readLittleEndian<uint32_t>(MFT_RECORD_MAGIC_NUMBER_OFFSET);
+        if (magic != MFT_RECORD_MAGIC) {
+            if (debugLevel > 1) {
+                log("Invalid MFT record magic: 0x" + std::to_string(magic) + 
+                    ", expected 0x" + std::to_string(MFT_RECORD_MAGIC) + 
+                    " for record " + std::to_string(recordnum), 2);
+            }
+        }
+        
+        updOff = readLittleEndian<uint16_t>(MFT_RECORD_UPDATE_SEQUENCE_OFFSET);
+        updCnt = readLittleEndian<uint16_t>(MFT_RECORD_UPDATE_SEQUENCE_SIZE_OFFSET);
+        
+        if (updOff < 42 || updOff >= MFT_RECORD_SIZE || 
+            updCnt == 0 || updOff + (updCnt * 2) > MFT_RECORD_SIZE) {
+            if (debugLevel > 1) {
+                log("Invalid update sequence array: offset=" + std::to_string(updOff) + 
+                    ", count=" + std::to_string(updCnt) + 
+                    " for record " + std::to_string(recordnum), 2);
+            }
+            return;
+        }
+        
+        lsn = readLittleEndian<uint64_t>(MFT_RECORD_LOGFILE_SEQUENCE_NUMBER_OFFSET);
+        seq = readLittleEndian<uint16_t>(MFT_RECORD_SEQUENCE_NUMBER_OFFSET);
+        link = readLittleEndian<uint16_t>(MFT_RECORD_HARD_LINK_COUNT_OFFSET);
+        attrOff = readLittleEndian<uint16_t>(MFT_RECORD_FIRST_ATTRIBUTE_OFFSET);
+        flags = readLittleEndian<uint16_t>(MFT_RECORD_FLAGS_OFFSET);
+        size = readLittleEndian<uint32_t>(MFT_RECORD_USED_SIZE_OFFSET);
+        allocSizef = readLittleEndian<uint32_t>(MFT_RECORD_ALLOCATED_SIZE_OFFSET);
+        baseRef = readLittleEndian<uint64_t>(MFT_RECORD_FILE_REFERENCE_OFFSET);
+        nextAttrid = readLittleEndian<uint16_t>(MFT_RECORD_NEXT_ATTRIBUTE_ID_OFFSET);
+        recordnum = readLittleEndian<uint32_t>(MFT_RECORD_RECORD_NUMBER_OFFSET);
+        
+        if (size > MFT_RECORD_SIZE || allocSizef != MFT_RECORD_SIZE) {
+            if (debugLevel > 1) {
+                log("Invalid record size: used=" + std::to_string(size) + 
+                    ", allocated=" + std::to_string(allocSizef) + 
+                    " for record " + std::to_string(recordnum), 2);
+            }
+        }
+        
+        if (attrOff < 56 || attrOff >= size) {
+            if (debugLevel > 1) {
+                log("Invalid attribute offset: " + std::to_string(attrOff) + 
+                    " for record " + std::to_string(recordnum), 2);
+            }
+            attrOff = 56; // Set to minimum valid offset
+        }
+        
+        if (!applyFixupArray()) {
+            if (debugLevel > 0) {
+                log("Fixup array validation failed for record " + std::to_string(recordnum), 1);
+            }
+        }
+        
+        parseAttributes();
+        
+    } catch (const std::exception& e) {
+        if (debugLevel > 0) {
+            log("Exception parsing MFT record header for record " + 
+                std::to_string(recordnum) + ": " + e.what(), 1);
+        }
+    }
+}
+
 template<typename T>
 T MftRecord::readLittleEndian(size_t offset) const {
     if (offset + sizeof(T) > rawRecord.size()) {
+        if (debugLevel > 2) {
+            log("Read beyond record bounds: offset=" + std::to_string(offset) + 
+                ", size=" + std::to_string(sizeof(T)) + 
+                ", record_size=" + std::to_string(rawRecord.size()) + 
+                " for record " + std::to_string(recordnum), 3);
+        }
         return T{};
     }
     
     T value = 0;
-    for (size_t i = 0; i < sizeof(T); ++i) {
+    for (size_t i = 0; i < sizeof(T) && (offset + i) < rawRecord.size(); ++i) {
         value |= static_cast<T>(rawRecord[offset + i]) << (i * 8);
     }
     return value;
@@ -71,72 +327,131 @@ void MftRecord::parseRecord() {
 
 void MftRecord::parseAttributes() {
     size_t offset = attrOff;
+    uint32_t attributeCount = 0;
+    const uint32_t MAX_ATTRIBUTES = 100; // Safety limit
     
-    while (offset < rawRecord.size() - 8) {
+    while (offset < rawRecord.size() - 8 && attributeCount < MAX_ATTRIBUTES) {
         try {
+            if (debugLevel > 2) {
+                log("Parsing attribute at offset " + std::to_string(offset) + 
+                    " for record " + std::to_string(recordnum), 3);
+            }
+            
             uint32_t attrType = readLittleEndian<uint32_t>(offset);
             uint32_t attrLen = readLittleEndian<uint32_t>(offset + 4);
             
+            if (debugLevel > 2) {
+                log("Attribute type: 0x" + std::to_string(attrType) + 
+                    ", length: " + std::to_string(attrLen) + 
+                    " for record " + std::to_string(recordnum), 3);
+            }
+
+            // Check for end of attributes
             if (attrType == 0xffffffff || attrLen == 0) {
+                if (debugLevel > 2) {
+                    log("End of attributes reached for record " + std::to_string(recordnum), 3);
+                }
                 break;
             }
             
-            attributeTypes.insert(attrType);
+            // Validate attribute length
+            if (attrLen < 16 || attrLen > (rawRecord.size() - offset)) {
+                if (debugLevel > 1) {
+                    log("Invalid attribute length: " + std::to_string(attrLen) + 
+                        " at offset " + std::to_string(offset) + 
+                        " for record " + std::to_string(recordnum), 2);
+                }
+                break;
+            }
             
+            // Ensure attribute length is properly aligned
+            if (attrLen % 8 != 0) {
+                if (debugLevel > 2) {
+                    log("Attribute length not 8-byte aligned: " + std::to_string(attrLen) + 
+                        " for record " + std::to_string(recordnum), 3);
+                }
+            }
+            
+            attributeTypes.insert(attrType);
+            attributeCount++;
+
+            // Parse specific attribute types with enhanced error handling
+            bool parseSuccess = false;
             switch (attrType) {
                 case STANDARD_INFORMATION_ATTRIBUTE:
-                    parseSiAttribute(offset);
+                    parseSuccess = parseSiAttributeWithValidation(offset);
                     break;
                 case FILE_NAME_ATTRIBUTE:
-                    parseFnAttribute(offset);
+                    parseSuccess = parseFnAttributeWithValidation(offset);
                     break;
                 case ATTRIBUTE_LIST_ATTRIBUTE:
-                    parseAttributeList(offset);
+                    parseSuccess = parseAttributeListWithValidation(offset);
                     break;
                 case OBJECT_ID_ATTRIBUTE:
-                    parseObjectIdAttribute(offset);
+                    parseSuccess = parseObjectIdAttributeWithValidation(offset);
                     break;
                 case SECURITY_DESCRIPTOR_ATTRIBUTE:
-                    parseSecurityDescriptor(offset);
+                    parseSuccess = parseSecurityDescriptorWithValidation(offset);
                     break;
                 case VOLUME_NAME_ATTRIBUTE:
-                    parseVolumeName(offset);
+                    parseSuccess = parseVolumeNameWithValidation(offset);
                     break;
                 case VOLUME_INFORMATION_ATTRIBUTE:
-                    parseVolumeInformation(offset);
+                    parseSuccess = parseVolumeInformationWithValidation(offset);
                     break;
                 case DATA_ATTRIBUTE:
-                    parseData(offset);
+                    parseSuccess = parseDataWithValidation(offset);
                     break;
                 case INDEX_ROOT_ATTRIBUTE:
-                    parseIndexRoot(offset);
+                    parseSuccess = parseIndexRootWithValidation(offset);
                     break;
                 case INDEX_ALLOCATION_ATTRIBUTE:
-                    parseIndexAllocation(offset);
+                    parseSuccess = parseIndexAllocationWithValidation(offset);
                     break;
                 case BITMAP_ATTRIBUTE:
-                    parseBitmap(offset);
+                    parseSuccess = parseBitmapWithValidation(offset);
                     break;
                 case REPARSE_POINT_ATTRIBUTE:
-                    parseReparsePoint(offset);
+                    parseSuccess = parseReparsePointWithValidation(offset);
                     break;
                 case EA_INFORMATION_ATTRIBUTE:
-                    parseEaInformation(offset);
+                    parseSuccess = parseEaInformationWithValidation(offset);
                     break;
                 case EA_ATTRIBUTE:
-                    parseEa(offset);
+                    parseSuccess = parseEaWithValidation(offset);
                     break;
                 case LOGGED_UTILITY_STREAM_ATTRIBUTE:
-                    parseLoggedUtilityStream(offset);
+                    parseSuccess = parseLoggedUtilityStreamWithValidation(offset);
+                    break;
+                default:
+                    if (debugLevel > 1) {
+                        log("Unknown attribute type: 0x" + std::to_string(attrType) + 
+                            " at offset " + std::to_string(offset) + 
+                            " for record " + std::to_string(recordnum), 2);
+                    }
+                    parseSuccess = true; // Continue parsing
                     break;
             }
             
-            offset += attrLen;
-        } catch (const std::exception& e) {
-            if (debugLevel >= 2) {
-                // Log error
+            if (!parseSuccess && debugLevel > 1) {
+                log("Failed to parse attribute type 0x" + std::to_string(attrType) + 
+                    " for record " + std::to_string(recordnum), 2);
             }
-            offset += 1;
+
+            offset += attrLen;
+
+        } catch (const std::exception& e) {
+            if (debugLevel >= 1) {
+                log("Exception processing attribute at offset " + std::to_string(offset) + 
+                    " for record " + std::to_string(recordnum) + ": " + e.what(), 1);
+            }
+            offset += 16; // Skip minimal attribute header size
+        }
+    }
+    
+    if (attributeCount >= MAX_ATTRIBUTES) {
+        if (debugLevel > 0) {
+            log("Maximum attribute limit reached for record " + std::to_string(recordnum), 1);
         }
     }
 }
@@ -452,6 +767,63 @@ void MftRecord::parseLoggedUtilityStream(size_t offset) {
         } catch (const std::exception& e) {
             loggedUtilityStream.reset();
         }
+    }
+}
+
+bool MftRecord::applyFixupArray() {
+    if (updCnt == 0 || updOff == 0) {
+        return true;
+    }
+    
+    try {
+        uint16_t updateSeqNum = readLittleEndian<uint16_t>(updOff);
+        
+        if (debugLevel > 2) {
+            log("Applying fixup array: USN=0x" + std::to_string(updateSeqNum) + 
+                ", count=" + std::to_string(updCnt) + 
+                " for record " + std::to_string(recordnum), 3);
+        }
+        
+        for (uint16_t i = 1; i < updCnt; ++i) {
+            size_t sectorOffset = (i * 512) - 2; // Last 2 bytes of each sector
+            
+            if (sectorOffset + 2 > rawRecord.size()) {
+                if (debugLevel > 1) {
+                    log("Fixup sector offset out of bounds: " + std::to_string(sectorOffset) + 
+                        " for record " + std::to_string(recordnum), 2);
+                }
+                return false;
+            }
+            
+            uint16_t sectorSeqNum = readLittleEndian<uint16_t>(sectorOffset);
+            if (sectorSeqNum != updateSeqNum) {
+                if (debugLevel > 1) {
+                    log("Fixup validation failed: expected 0x" + std::to_string(updateSeqNum) + 
+                        ", found 0x" + std::to_string(sectorSeqNum) + 
+                        " at sector " + std::to_string(i) + 
+                        " for record " + std::to_string(recordnum), 2);
+                }
+                return false;
+            }
+            
+            uint16_t fixupValue = readLittleEndian<uint16_t>(updOff + (i * 2));
+            rawRecord[sectorOffset] = static_cast<uint8_t>(fixupValue & 0xFF);
+            rawRecord[sectorOffset + 1] = static_cast<uint8_t>((fixupValue >> 8) & 0xFF);
+        }
+        
+        return true;
+    } catch (const std::exception& e) {
+        if (debugLevel > 0) {
+            log("Exception in fixup array processing for record " + 
+                std::to_string(recordnum) + ": " + e.what(), 1);
+        }
+        return false;
+    }
+}
+
+void MftRecord::log(const std::string& message, int level) const {
+    if (level <= debugLevel) {
+        std::cout << message << std::endl;
     }
 }
 

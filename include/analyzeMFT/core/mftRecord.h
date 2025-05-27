@@ -144,9 +144,13 @@ public:
 
 private:
     std::vector<uint8_t> rawRecord;
+    std::unique_ptr<MftAttributeValidator> validator;
+    
     int debugLevel;
     bool computeHashesFlag;
-    
+    bool applyFixupArray();
+    bool validateFixupArray() const;
+    void log(const std::string& message, int level) const;
     void parseRecord();
     void parseAttributes();
     void parseSiAttribute(size_t offset);
@@ -164,7 +168,21 @@ private:
     void parseEaInformation(size_t offset);
     void parseEa(size_t offset);  
     void parseLoggedUtilityStream(size_t offset);
-    
+    bool parseSiAttributeWithValidation(size_t offset);
+    bool parseFnAttributeWithValidation(size_t offset);
+    bool parseAttributeListWithValidation(size_t offset);
+    bool parseObjectIdAttributeWithValidation(size_t offset);
+    bool parseSecurityDescriptorWithValidation(size_t offset);
+    bool parseVolumeNameWithValidation(size_t offset);
+    bool parseVolumeInformationWithValidation(size_t offset);
+    bool parseDataWithValidation(size_t offset);
+    bool parseIndexRootWithValidation(size_t offset);
+    bool parseIndexAllocationWithValidation(size_t offset);
+    bool parseBitmapWithValidation(size_t offset);
+    bool parseReparsePointWithValidation(size_t offset);
+    bool parseEaInformationWithValidation(size_t offset);
+    bool parseEaWithValidation(size_t offset);
+    bool parseLoggedUtilityStreamWithValidation(size_t offset);
     template<typename T>
     T readLittleEndian(size_t offset) const;
     

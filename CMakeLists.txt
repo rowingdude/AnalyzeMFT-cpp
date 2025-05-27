@@ -117,6 +117,8 @@ set(PARSERS_SOURCES
     src/parsers/bitmapParser.cpp
     src/parsers/reparsepointParser.cpp
     src/parsers/xattrParser.cpp
+    src/parsers/validationHelpers.cpp
+    src/parsers/mftAttributeValidator.cpp
 )
 
 
