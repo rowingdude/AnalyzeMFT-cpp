@@ -1,3 +1,4 @@
+/* include/analyzeMFT/core/mftRecord.h */
 #ifndef ANALYZEMFT_MFTRECORD_H
 #define ANALYZEMFT_MFTRECORD_H
 
@@ -9,6 +10,7 @@
 #include "winTime.h"
 #include "constants.h"
 
+// Forward declarations - moved from individual files
 struct AttributeListEntry {
     uint32_t type;
     std::string name;
@@ -23,12 +25,14 @@ struct SecurityDescriptor {
     uint32_t groupOffset;
     uint32_t saclOffset;
     uint32_t daclOffset;
+    bool valid;
 };
 
 struct VolumeInfo {
     uint8_t majorVersion;
     uint8_t minorVersion;
     uint16_t flags;
+    bool valid;
 };
 
 struct DataAttribute {
@@ -37,6 +41,7 @@ struct DataAttribute {
     uint32_t contentSize;
     uint64_t startVcn;
     uint64_t lastVcn;
+    bool valid;
 };
 
 struct IndexRoot {
@@ -44,26 +49,31 @@ struct IndexRoot {
     uint32_t collationRule;
     uint32_t indexAllocSize;
     uint8_t clustersPerIndex;
+    bool valid;
 };
 
 struct IndexAllocation {
     uint16_t dataRunsOffset;
+    bool valid;
 };
 
 struct BitmapAttribute {
     uint32_t size;
     std::vector<uint8_t> data;
+    bool valid;
 };
 
 struct ReparsePoint {
     uint32_t reparseTag;
     uint16_t dataLength;
     std::vector<uint8_t> data;
+    bool valid;
 };
 
 struct EaInformation {
     uint32_t eaSize;
     uint32_t eaCount;
+    bool valid;
 };
 
 struct ExtendedAttribute {
@@ -71,11 +81,13 @@ struct ExtendedAttribute {
     uint8_t flags;
     std::string name;
     std::vector<uint8_t> value;
+    bool valid;
 };
 
 struct LoggedUtilityStream {
     uint64_t size;
     std::vector<uint8_t> data;
+    bool valid;
 };
 
 class MftRecord {
@@ -144,10 +156,9 @@ public:
 
 private:
     std::vector<uint8_t> rawRecord;
-    std::unique_ptr<MftAttributeValidator> validator;
-    
     int debugLevel;
     bool computeHashesFlag;
+    
     bool applyFixupArray();
     bool validateFixupArray() const;
     void log(const std::string& message, int level) const;
@@ -166,23 +177,9 @@ private:
     void parseBitmap(size_t offset);
     void parseReparsePoint(size_t offset);
     void parseEaInformation(size_t offset);
-    void parseEa(size_t offset);  
+    void parseEa(size_t offset);
     void parseLoggedUtilityStream(size_t offset);
-    bool parseSiAttributeWithValidation(size_t offset);
-    bool parseFnAttributeWithValidation(size_t offset);
-    bool parseAttributeListWithValidation(size_t offset);
-    bool parseObjectIdAttributeWithValidation(size_t offset);
-    bool parseSecurityDescriptorWithValidation(size_t offset);
-    bool parseVolumeNameWithValidation(size_t offset);
-    bool parseVolumeInformationWithValidation(size_t offset);
-    bool parseDataWithValidation(size_t offset);
-    bool parseIndexRootWithValidation(size_t offset);
-    bool parseIndexAllocationWithValidation(size_t offset);
-    bool parseBitmapWithValidation(size_t offset);
-    bool parseReparsePointWithValidation(size_t offset);
-    bool parseEaInformationWithValidation(size_t offset);
-    bool parseEaWithValidation(size_t offset);
-    bool parseLoggedUtilityStreamWithValidation(size_t offset);
+    
     template<typename T>
     T readLittleEndian(size_t offset) const;
     

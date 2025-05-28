@@ -1,4 +1,9 @@
-#include "sqliteWriter.h"
+#include "../../include/analyzeMFT/writers/sqliteWriter.h"
+
+#ifdef HAVE_SQLITE3
+#include <sqlite3.h>
+#endif
+
 #include "../core/constants.h"
 #include "../utils/fsUtils.h"
 #include <iostream>

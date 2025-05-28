@@ -1,6 +1,10 @@
-#include "hashCalc.h"
+#include "../../include/analyzeMFT/utils/hashCalc.h"
+
+#ifdef HAVE_OPENSSL
 #include <openssl/md5.h>
 #include <openssl/sha.h>
+#endif
+
 #include <iomanip>
 #include <sstream>
 

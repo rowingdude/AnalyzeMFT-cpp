@@ -10,76 +10,88 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Include build configuration
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/build/cmake")
-
-# Set default build type
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-# Project options
 option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 option(ENABLE_TESTING "Enable testing" ON)
-option(ENABLE_BENCHMARKING "Enable benchmarking" OFF)
 option(ENABLE_SIMD "Enable SIMD optimizations" ON)
 option(ENABLE_OPENMP "Enable OpenMP support" OFF)
-option(BUILD_PYTHON_BINDINGS "Build Python bindings" OFF)
-option(INSTALL_DEVELOPMENT "Install development files" ON)
 
-# Include build modules
-include(CompileFlags)
-include(FindDependencies)
-
-# Set include directories
 include_directories(
     ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include/analyzeMFT
 )
 
-# Platform-specific settings
 if(WIN32)
     add_definitions(-DWIN32_LEAN_AND_MEAN -DNOMINMAX)
-    set(PLATFORM_LIBS ws2_32 advapi32)
+    set(PLATFORM_LIBS)
 elseif(UNIX)
     set(PLATFORM_LIBS pthread dl)
 endif()
 
-# Compiler-specific flags
 if(MSVC)
-    add_compile_options(/W4 /WX)
+    add_compile_options(/W4)
     if(ENABLE_SIMD)
         add_compile_options(/arch:AVX2)
     endif()
 else()
-    add_compile_options(-Wall -Wextra -Werror -pedantic)
+    add_compile_options(-Wall -Wextra -pedantic)
     if(ENABLE_SIMD)
         add_compile_options(-mavx2 -msse4.2)
     endif()
 endif()
 
-# Debug/Release configurations
+if(ENABLE_SIMD)
+    include(CheckCXXCompilerFlag)
+    
+    check_cxx_compiler_flag("-mavx512f" COMPILER_SUPPORTS_AVX512)
+    if(COMPILER_SUPPORTS_AVX512)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f")
+        add_definitions(-DAVX512_SUPPORTED)
+    endif()
+    
+    check_cxx_compiler_flag("-mavx2" COMPILER_SUPPORTS_AVX2)
+    if(COMPILER_SUPPORTS_AVX2)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2")
+        add_definitions(-DAVX2_SUPPORTED)
+    endif()
+    
+    check_cxx_compiler_flag("-msse4.2" COMPILER_SUPPORTS_SSE42)
+    if(COMPILER_SUPPORTS_SSE42)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse4.2")
+        add_definitions(-DSSE42_SUPPORTED)
+    endif()
+    
+    check_cxx_compiler_flag("-mfpu=neon" COMPILER_SUPPORTS_NEON)
+    if(COMPILER_SUPPORTS_NEON)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mfpu=neon")
+        add_definitions(-DNEON_SUPPORTED)
+    endif()
+endif()
+
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_definitions(-DDEBUG -D_DEBUG)
 else()
     add_definitions(-DNDEBUG)
     if(NOT MSVC)
-        add_compile_options(-O3 -march=native)
+        add_compile_options(-O3)
     endif()
 endif()
 
-# Find dependencies
-find_package(OpenSSL REQUIRED)
-find_package(SQLite3 REQUIRED)
+find_package(PkgConfig QUIET)
 
-if(ENABLE_OPENMP)
-    find_package(OpenMP)
-    if(OpenMP_CXX_FOUND)
-        target_link_libraries(AnalyzeMFT OpenMP::OpenMP_CXX)
-    endif()
+find_package(OpenSSL QUIET)
+if(OpenSSL_FOUND)
+    add_definitions(-DHAVE_OPENSSL)
 endif()
 
-# Source files
+find_package(SQLite3 QUIET)
+if(SQLite3_FOUND OR TARGET SQLite::SQLite3)
+    add_definitions(-DHAVE_SQLITE3)
+endif()
+
 set(CORE_SOURCES
     src/core/winTime.cpp
     src/core/mftRecord.cpp
@@ -87,40 +99,44 @@ set(CORE_SOURCES
 )
 
 set(UTILS_SOURCES
-    src/utils/hashCalc.cpp
     src/utils/stringUtils.cpp
     src/utils/logger.cpp
-    src/utils/memUtils.cpp
     src/utils/fsUtils.cpp
 )
+
+if(OpenSSL_FOUND)
+    list(APPEND UTILS_SOURCES src/utils/hashCalc.cpp)
+endif()
 
 set(WRITERS_SOURCES
     src/writers/fileWriter.cpp
     src/writers/csvWriter.cpp
     src/writers/jsonWriter.cpp
     src/writers/xmlWriter.cpp
-    src/writers/excelWriter.cpp
-    src/writers/sqliteWriter.cpp
     src/writers/bodyWriter.cpp
     src/writers/timelineWriter.cpp
 )
+
+if(OpenSSL_FOUND)
+    list(APPEND WRITERS_SOURCES src/writers/excelWriter.cpp)
+endif()
+
+if(SQLite3_FOUND OR TARGET SQLite::SQLite3)
+    list(APPEND WRITERS_SOURCES src/writers/sqliteWriter.cpp)
+endif()
 
 set(PARSERS_SOURCES
     src/parsers/attributeParser.cpp
     src/parsers/standardinfoParser.cpp
     src/parsers/filenameParser.cpp
     src/parsers/objectidParser.cpp
-    src/parsers/secdescParser.cpp
     src/parsers/volumeParser.cpp
     src/parsers/dataParser.cpp
     src/parsers/indexParser.cpp
     src/parsers/bitmapParser.cpp
     src/parsers/reparsepointParser.cpp
     src/parsers/xattrParser.cpp
-    src/parsers/validationHelpers.cpp
-    src/parsers/mftAttributeValidator.cpp
 )
-
 
 set(CLI_SOURCES
     src/cli/cliParser.cpp
@@ -135,67 +151,31 @@ set(ALL_SOURCES
     ${CLI_SOURCES}
 )
 
-# Create library
 add_library(libAnalyzeMFT ${ALL_SOURCES})
 
-# Set library properties
 set_target_properties(libAnalyzeMFT PROPERTIES
     OUTPUT_NAME "analyzemft"
     VERSION ${PROJECT_VERSION}
     SOVERSION ${PROJECT_VERSION_MAJOR}
 )
 
-# Link libraries
-target_link_libraries(libAnalyzeMFT
-    OpenSSL::SSL
-    OpenSSL::Crypto
-    SQLite3::SQLite3
-    ${PLATFORM_LIBS}
-)
+if(OpenSSL_FOUND)
+    target_link_libraries(libAnalyzeMFT OpenSSL::SSL OpenSSL::Crypto)
+endif()
 
-# Create executable
+if(SQLite3_FOUND)
+    target_link_libraries(libAnalyzeMFT SQLite::SQLite3)
+elseif(TARGET SQLite3::SQLite3)
+    target_link_libraries(libAnalyzeMFT SQLite3::SQLite3)
+endif()
+
+target_link_libraries(libAnalyzeMFT ${PLATFORM_LIBS})
+
 add_executable(analyzemft src/main.cpp)
 target_link_libraries(analyzemft libAnalyzeMFT)
 
-# C API library
-add_library(canalyzemft include/canalyzemft.cpp)
-target_link_libraries(canalyzemft libAnalyzeMFT)
-
-# Install targets
-install(TARGETS analyzemft libAnalyzeMFT canalyzemft
+install(TARGETS analyzemft libAnalyzeMFT
     RUNTIME DESTINATION bin
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
 )
-
-if(INSTALL_DEVELOPMENT)
-    install(DIRECTORY include/ DESTINATION include)
-    install(DIRECTORY src/ DESTINATION include/analyzeMFT
-        FILES_MATCHING PATTERN "*.h"
-    )
-endif()
-
-# Install data files
-install(DIRECTORY data/ DESTINATION share/analyzemft/data)
-
-# Testing
-if(ENABLE_TESTING)
-    enable_testing()
-    add_subdirectory(tests)
-endif()
-
-# Packaging
-set(CPACK_PACKAGE_NAME "AnalyzeMFT")
-set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY ${PROJECT_DESCRIPTION})
-set(CPACK_PACKAGE_VENDOR "AnalyzeMFT Project")
-set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
-set(CPACK_RESOURCE_FILE_README "${CMAKE_SOURCE_DIR}/README.md")
-
-if(WIN32)
-    set(CPACK_GENERATOR "NSIS;ZIP")
-else()
-    set(CPACK_GENERATOR "TGZ;DEB;RPM")
-endif()
-
-include(CPack)

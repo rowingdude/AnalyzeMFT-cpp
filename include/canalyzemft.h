@@ -1,5 +1,5 @@
-#ifndef CANALYZEMFT_H
-#define CANALYZEMFT_H
+#ifndef canalyzemft_H
+#define canalyzemft_H
 
 #include "version.h"
 #include "../src/core/constants.h"

@@ -1,33 +1,46 @@
-#include "mftRecord.h"
+#include "../../include/analyzeMFT/core/mftRecord.h"
 #include "../utils/hashCalc.h"
 #include "../utils/stringUtils.h"
-#include "../parsers/attributeParser.h"
-#include "../parsers/standardinfoParser.h"
-#include "../parsers/filenameParser.h"
-#include "../parsers/objectidParser.h"
-#include "../parsers/secdescParser.h"
-#include "../parsers/volumeParser.h"
-#include "../parsers/dataParser.h"
-#include "../parsers/indexParser.h"
-#include "../parsers/bitmapParser.h"
-#include "../parsers/reparsepointParser.h"
-#include "../parsers/xattrParser.h"
 #include <algorithm>
 #include <cstring>
 #include <iomanip>
 #include <sstream>
+#include <iostream>
 
 MftRecord::MftRecord(const std::vector<uint8_t>& rawRecord, bool computeHashes, int debugLevel)
     : rawRecord(rawRecord), debugLevel(debugLevel), computeHashesFlag(computeHashes),
       magic(0), updOff(0), updCnt(0), lsn(0), seq(0), link(0), attrOff(0), flags(0),
       size(0), allocSizef(0), baseRef(0), nextAttrid(0), recordnum(0), filesize(0), parentRef(0) {
     
-    validator = std::make_unique<MftAttributeValidator>(debugLevel, 0); // recordnum set later
-    
     if (computeHashesFlag) {
         computeHashes();
     }
     parseRecord();
+}
+
+template<typename T>
+T MftRecord::readLittleEndian(size_t offset) const {
+    if (offset + sizeof(T) > rawRecord.size()) {
+        if (debugLevel > 2) {
+            log("Read beyond record bounds: offset=" + std::to_string(offset) + 
+                ", size=" + std::to_string(sizeof(T)) + 
+                ", record_size=" + std::to_string(rawRecord.size()) + 
+                " for record " + std::to_string(recordnum), 3);
+        }
+        return T{};
+    }
+    
+    T value = 0;
+    for (size_t i = 0; i < sizeof(T) && (offset + i) < rawRecord.size(); ++i) {
+        value |= static_cast<T>(rawRecord[offset + i]) << (i * 8);
+    }
+    return value;
+}
+
+void MftRecord::log(const std::string& message, int level) const {
+    if (level <= debugLevel) {
+        std::cout << message << std::endl;
+    }
 }
 
 bool MftRecord::parseSiAttributeWithValidation(size_t offset) {
@@ -198,101 +211,6 @@ bool MftRecord::parseLoggedUtilityStreamWithValidation(size_t offset) {
     return result.isValid;
 }
 
-
-
-void MftRecord::parseRecord() {
-    if (rawRecord.size() < MFT_RECORD_SIZE) {
-        if (debugLevel > 0) {
-            log("Invalid MFT record size: " + std::to_string(rawRecord.size()) + 
-                " bytes, expected " + std::to_string(MFT_RECORD_SIZE), 1);
-        }
-        return;
-    }
-    
-    try {
-        magic = readLittleEndian<uint32_t>(MFT_RECORD_MAGIC_NUMBER_OFFSET);
-        if (magic != MFT_RECORD_MAGIC) {
-            if (debugLevel > 1) {
-                log("Invalid MFT record magic: 0x" + std::to_string(magic) + 
-                    ", expected 0x" + std::to_string(MFT_RECORD_MAGIC) + 
-                    " for record " + std::to_string(recordnum), 2);
-            }
-        }
-        
-        updOff = readLittleEndian<uint16_t>(MFT_RECORD_UPDATE_SEQUENCE_OFFSET);
-        updCnt = readLittleEndian<uint16_t>(MFT_RECORD_UPDATE_SEQUENCE_SIZE_OFFSET);
-        
-        if (updOff < 42 || updOff >= MFT_RECORD_SIZE || 
-            updCnt == 0 || updOff + (updCnt * 2) > MFT_RECORD_SIZE) {
-            if (debugLevel > 1) {
-                log("Invalid update sequence array: offset=" + std::to_string(updOff) + 
-                    ", count=" + std::to_string(updCnt) + 
-                    " for record " + std::to_string(recordnum), 2);
-            }
-            return;
-        }
-        
-        lsn = readLittleEndian<uint64_t>(MFT_RECORD_LOGFILE_SEQUENCE_NUMBER_OFFSET);
-        seq = readLittleEndian<uint16_t>(MFT_RECORD_SEQUENCE_NUMBER_OFFSET);
-        link = readLittleEndian<uint16_t>(MFT_RECORD_HARD_LINK_COUNT_OFFSET);
-        attrOff = readLittleEndian<uint16_t>(MFT_RECORD_FIRST_ATTRIBUTE_OFFSET);
-        flags = readLittleEndian<uint16_t>(MFT_RECORD_FLAGS_OFFSET);
-        size = readLittleEndian<uint32_t>(MFT_RECORD_USED_SIZE_OFFSET);
-        allocSizef = readLittleEndian<uint32_t>(MFT_RECORD_ALLOCATED_SIZE_OFFSET);
-        baseRef = readLittleEndian<uint64_t>(MFT_RECORD_FILE_REFERENCE_OFFSET);
-        nextAttrid = readLittleEndian<uint16_t>(MFT_RECORD_NEXT_ATTRIBUTE_ID_OFFSET);
-        recordnum = readLittleEndian<uint32_t>(MFT_RECORD_RECORD_NUMBER_OFFSET);
-        
-        if (size > MFT_RECORD_SIZE || allocSizef != MFT_RECORD_SIZE) {
-            if (debugLevel > 1) {
-                log("Invalid record size: used=" + std::to_string(size) + 
-                    ", allocated=" + std::to_string(allocSizef) + 
-                    " for record " + std::to_string(recordnum), 2);
-            }
-        }
-        
-        if (attrOff < 56 || attrOff >= size) {
-            if (debugLevel > 1) {
-                log("Invalid attribute offset: " + std::to_string(attrOff) + 
-                    " for record " + std::to_string(recordnum), 2);
-            }
-            attrOff = 56; // Set to minimum valid offset
-        }
-        
-        if (!applyFixupArray()) {
-            if (debugLevel > 0) {
-                log("Fixup array validation failed for record " + std::to_string(recordnum), 1);
-            }
-        }
-        
-        parseAttributes();
-        
-    } catch (const std::exception& e) {
-        if (debugLevel > 0) {
-            log("Exception parsing MFT record header for record " + 
-                std::to_string(recordnum) + ": " + e.what(), 1);
-        }
-    }
-}
-
-template<typename T>
-T MftRecord::readLittleEndian(size_t offset) const {
-    if (offset + sizeof(T) > rawRecord.size()) {
-        if (debugLevel > 2) {
-            log("Read beyond record bounds: offset=" + std::to_string(offset) + 
-                ", size=" + std::to_string(sizeof(T)) + 
-                ", record_size=" + std::to_string(rawRecord.size()) + 
-                " for record " + std::to_string(recordnum), 3);
-        }
-        return T{};
-    }
-    
-    T value = 0;
-    for (size_t i = 0; i < sizeof(T) && (offset + i) < rawRecord.size(); ++i) {
-        value |= static_cast<T>(rawRecord[offset + i]) << (i * 8);
-    }
-    return value;
-}
 
 void MftRecord::parseRecord() {
     if (rawRecord.size() < MFT_RECORD_SIZE) {

@@ -1,7 +1,7 @@
-#include "app.h"
+#include "../../include/analyzeMFT/cli/app.h"
 #include "../utils/logger.h"
 #include "../utils/fsUtils.h"
-#include "../include/version.h"
+#include "../../include/version.h"
 #include <iostream>
 #include <csignal>
 
