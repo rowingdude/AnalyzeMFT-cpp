@@ -43,33 +43,7 @@ else()
     endif()
 endif()
 
-if(ENABLE_SIMD)
-    include(CheckCXXCompilerFlag)
-    
-    check_cxx_compiler_flag("-mavx512f" COMPILER_SUPPORTS_AVX512)
-    if(COMPILER_SUPPORTS_AVX512)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f")
-        add_definitions(-DAVX512_SUPPORTED)
-    endif()
-    
-    check_cxx_compiler_flag("-mavx2" COMPILER_SUPPORTS_AVX2)
-    if(COMPILER_SUPPORTS_AVX2)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2")
-        add_definitions(-DAVX2_SUPPORTED)
-    endif()
-    
-    check_cxx_compiler_flag("-msse4.2" COMPILER_SUPPORTS_SSE42)
-    if(COMPILER_SUPPORTS_SSE42)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse4.2")
-        add_definitions(-DSSE42_SUPPORTED)
-    endif()
-    
-    check_cxx_compiler_flag("-mfpu=neon" COMPILER_SUPPORTS_NEON)
-    if(COMPILER_SUPPORTS_NEON)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mfpu=neon")
-        add_definitions(-DNEON_SUPPORTED)
-    endif()
-endif()
+
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_definitions(-DDEBUG -D_DEBUG)
